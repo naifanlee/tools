@@ -18,8 +18,6 @@ def parse_args():
     parser.add_argument('--stream', action='store_true')
     args = parser.parse_args()
     args.stream = int(args.stream)
-    if not args.annopath:
-        args.annopath = args.imgpath
     if args.dst:
         checkpath(args.dst)
     print(args)
@@ -45,7 +43,8 @@ if __name__ == '__main__':
                 annofpath = (Path(args.annopath) / rel_annofpath).as_posix()
 
             img = cv2.imread(str(imgfpath))
-            draw_bboxes(img, annofpath, show_conf=True)
+            if args.annopath:
+               draw_bboxes(img, annofpath, show_conf=True)
             cv2.imshow('viewimg', img)
 
             key = cv2.waitKey(args.stream)

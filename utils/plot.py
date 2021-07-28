@@ -2,7 +2,6 @@ import cv2
 import random
 
 from .helper_funs import parse_dets
-from .utils import clip
 
 
 random.seed(random.randint(0, 100))

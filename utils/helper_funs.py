@@ -3,6 +3,7 @@ import re
 import os.path as osp
 
 import cv2
+import numpy as np
 
 def parse_dets(annos):
     labels = []
@@ -13,12 +14,12 @@ def parse_dets(annos):
 
         with open(annos, 'r') as fr:
             bboxes = [bbox.strip().split() for bbox in fr.readlines()]
-    elif isinstance(annos, list):
+    elif isinstance(annos, list) or isinstance(annos, np.ndarray):
         bboxes = annos
     elif isinstance(annos, dict):
         bboxes = [bbox for _, bbox in annos.items()]
     else:
-        assert(False)
+        assert(False), 'annos.type: {}'.format(type(annos))
 
     for bbox in bboxes:
         if len(bbox) == 5:
