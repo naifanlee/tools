@@ -29,8 +29,19 @@ def draw_bboxes(img, label_fpath, imginfo='', show_conf=False):
     for label in labels:
         cate, xlt, ylt, xrb, yrb = label['cate'], label['xlt'], label['ylt'], label['xrb'], label['yrb']
         
+        #
+        if xlt <= 1 and ylt <= 1 and xrb <= 1 and yrb <= 1: # normalized xy
+            h, w, _ = img.shape
+            xlt, xrb = map(lambda x:x*w, [xlt, xrb])
+            ylt, yrb = map(lambda x:x*h, [ylt, yrb])
+        xlt, ylt, xrb, yrb = map(int, [xlt, ylt, xrb, yrb])
+
         # draw bbox
-        cate_color = cate_colors[cates.index(cate)]
+        try:
+            cate_color = cate_colors[int(cate)]
+            cate = cates[int(cate)]    
+        except:
+            cate_color = cate_colors[cates.index(cate)]
         cv2.rectangle(img, (xlt, ylt), (xrb, yrb), cate_color, 1)
         
         # putText
@@ -49,5 +60,5 @@ def draw_bboxes(img, label_fpath, imginfo='', show_conf=False):
 
     if imginfo:
         cv2.putText(img, str(imginfo), (5, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-    
-    # return img
+
+    return img

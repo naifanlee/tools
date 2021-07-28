@@ -2,7 +2,7 @@ import json
 import re
 import os.path as osp
 
-
+import cv2
 
 def parse_dets(annos):
     labels = []
@@ -28,19 +28,19 @@ def parse_dets(annos):
         elif len(bbox) == 6:
             trackid = ''
             cate = bbox[0]
-            xc, yc, w, h = map(lambda x: int(float(x)), bbox[1:-1])
+            xc, yc, w, h = map(lambda x: float(x), bbox[1:-1])
             conf = round(float(bbox[-1]), 2)           
         elif len(bbox) == 7:
             trackid, cate = bbox[:2]
-            xc, yc, w, h = map(lambda x: int(float(x)), bbox[2:-1])
+            xc, yc, w, h = map(lambda x: float(x), bbox[2:-1])
             conf = round(float(bbox[-1]), 2)
         else:
             assert(False), 'len(bbox) must = 5/6/7: {}'.format(bbox)
 
-        xlt = int(xc - w / 2)
-        ylt = int(yc - h / 2)
-        xrb = int(xc + w / 2)
-        yrb = int(yc + h / 2)
+        xlt = xc - w / 2
+        ylt = yc - h / 2
+        xrb = xc + w / 2
+        yrb = yc + h / 2
         cate = 'bicycle' if cate == 'bike' else cate
 
         labels.append({
@@ -80,13 +80,6 @@ def parse_nmjson(anno_fpath):
             if catenm == 'ignore_area':
                 catenm = 'ignore'
             anns.append([catenm, xlt + w / 2, ylt + h / 2, w, h])
-            # if img.shape[0] == 1280:
-            #     y -= 90
-            #     y = max(0, y)
-            #     h = min(h, (1280-90-38-y))
-            # elif img.shape[0] == 1208:
-            #     y -= 56
-            #     y = max(0, y)
             
         key = anno['raw_filename'].split('/')[-1][:-4]
         anns_dt[key] = anns
@@ -127,3 +120,52 @@ def yuv2img(yuv_fpath, img_fpath, platform='tda4', img_format='png'):
     # cv2.imwrite(img_fpath, img)
 
     return error_code
+
+def o2s_transform(oimg, oanns=None, norm=False):
+    def ann_transform(bbox, crop, scale):
+        xc, yc, w, h = bbox
+        tpcrop, btcrop = crop
+        ylt = max(0, yc - h/2 - tpcrop)
+        yrb = min(1280-1-btcrop, ylt + h)
+        h = round(yrb - ylt, 3)
+        yc = round((ylt + yrb) / 2, 3)
+        if yc - bbox[1] >= 0.0000001 or h - bbox[3] >= 0.0000001:
+            print('yc', bbox[1], yc)
+            print('h', bbox[-1], h)
+        return list(map(lambda x:x/scale, [xc, yc, w, h]))
+
+    oimgh, oimgw = oimg.shape[:2]
+    dstw, dsth = 640, 384
+    
+    if oimg.shape == (1280, 1920, 3):
+        tpcrop, btcrop = 90, 38
+        scale = 3
+    elif oimg.shape == (1208, 1920, 3):
+        tpcrop, btcrop = 56, 0
+        scale = 3
+    elif oimg.shape == (1152, 1920, 3):
+        tpcrop, btcrop = 0, 0
+        scale = 3
+    elif oimg.shape == (384, 640, 3):
+        tpcrop, btcrop = 0, 0
+        scale = 1
+    else:
+        assert(False), 'oimg.shape: {} is not right.'.format(oimg.shape)
+
+    # simg
+    assert(((oimgh - tpcrop - btcrop) == scale * dsth) & 
+            (oimgw == scale * dstw))
+    oimg = oimg[tpcrop:oimgh-btcrop, :, :]
+    simg = cv2.resize(oimg, (dstw, dsth))
+    
+    # sanns
+    sanns = []
+    if oanns is not None:
+        sanns = [[oann[0]] + ann_transform(oann[1:], (tpcrop, btcrop), scale) for oann in oanns]
+    
+    # snnas_norm
+    sanns_norm = []
+    if norm:
+        sanns_norm = [[sann[0], sann[1]/dstw, sann[2]/dsth, sann[3]/dstw, sann[4]/dsth] for sann in sanns]
+    
+    return simg, sanns, sanns_norm
