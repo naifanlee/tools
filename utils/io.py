@@ -1,10 +1,11 @@
+import glob
+import os
+import os.path as osp
 from pathlib import Path
 import shutil
 
+from .utils import usort
 
-
-def checkfile(fpath):
-    pass
 
 def checkpath(p, ok=None):
     p = Path(p)
@@ -21,7 +22,19 @@ def checkpath(p, ok=None):
     else:
         p.mkdir(parents=True)
 
-def uglob(p, regex='*'):
-    fpaths = list(Path(p).rglob(regex))
-    print('==> Number of files: {}'.format(len(fpaths)))
-    return fpaths
+
+def walk(p, regex='*'):
+    walks = []
+    imgnum = 0
+    for dirpath, dirs, fnames in os.walk(p):
+        print('{}/{}'.format(dirpath, regex))
+        fpaths = glob.glob('{}/{}'.format(dirpath, regex))
+        if fpaths:
+            walks.append([osp.dirname(fpaths[0]), fpaths])
+            imgnum += len(fpaths)
+
+    print('==> Number: {:<6d}, Path: {}'.format(imgnum, p))
+    for dirpath, fpaths in walks:
+        print('  Number: {:<6d}, dirpath: {}'.format(len(fpaths), dirpath))
+
+    return walks

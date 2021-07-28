@@ -1,3 +1,4 @@
+import json
 import re
 import os.path as osp
 
@@ -53,6 +54,43 @@ def parse_dets(annos):
         })
 
     return labels
+
+def parse_nmjson(anno_fpath):
+    anns_dt = {}
+    for anno in json.load(open(anno_fpath, 'r')):
+        objs = [obj['tags'] for obj in anno['task_vehicle']]
+        ''' objs
+            {'class': 'pedestrian',
+            'height': 696.14,
+            'point': [['1308', '403'],
+                        ['1308', '1099'],
+                        ['1674', '1099'],
+                        ['1674', '403']],
+            'type': 'rect',
+            'width': 366.79,
+            'x': 1308.07,
+            'y': 403.28}
+        '''
+        anns = []
+        for obj in objs:
+            catenm = obj['class'].strip()
+            xlt, ylt, w, h = obj['x'], obj['y'], obj['width'], obj['height']
+            if catenm in ['rider', 'motocycle']:
+                catenm = 'bicycle'
+            if catenm == 'ignore_area':
+                catenm = 'ignore'
+            anns.append([catenm, xlt + w / 2, ylt + h / 2, w, h])
+            # if img.shape[0] == 1280:
+            #     y -= 90
+            #     y = max(0, y)
+            #     h = min(h, (1280-90-38-y))
+            # elif img.shape[0] == 1208:
+            #     y -= 56
+            #     y = max(0, y)
+            
+        key = anno['raw_filename'].split('/')[-1][:-4]
+        anns_dt[key] = anns
+    return anns_dt
 
 def yuv2img(yuv_fpath, img_fpath, platform='tda4', img_format='png'):
     if platform == 'tda4':
