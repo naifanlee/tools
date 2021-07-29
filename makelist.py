@@ -13,6 +13,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--imgpath', type=str, required=True)
     parser.add_argument('--name', type=str, required=True)
+    parser.add_argument('--regex', type=str, default='*')
     args = parser.parse_args()
 
     print(args)
@@ -20,7 +21,7 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    for dirpath, fpaths in walk(args.imgpath, regex='**/*.png'):
+    for dirpath, fpaths in walk(args.imgpath, regex=args.regex):
         for fpath in fpaths:
             with open(args.name + '.txt', 'a') as fa:
                 fa.write(fpath + '\n')

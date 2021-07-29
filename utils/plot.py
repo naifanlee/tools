@@ -1,14 +1,11 @@
 import cv2
 import random
 
+from .cfgs import catenms_train, cate_colors
 from .helper_funs import parse_dets
 
 
-random.seed(random.randint(0, 100))
-cates = ['car', 'truck', 'bus', 'pedestrian', 'bicycle', 'tricycle', 'tlight', 'tsign', 'ignore']
-cate_colors = [[random.randint(0, 255) for _ in range(3)] for cate in cates]
-
-def draw_bboxes(img, label_fpath, imginfo='', show_conf=False):
+def draw_bboxes(img, labels, imginfo='', show_conf=False):
     def compute_puttext_loc(imgw, basepoint, tsize):
         xlt, ylt, xrb, yrb = basepoint
         if ylt - tsize[-1] - 1 < 0:  # top truncated case
@@ -21,7 +18,6 @@ def draw_bboxes(img, label_fpath, imginfo='', show_conf=False):
             
         return (xlt, ylt)
     
-    labels = parse_dets(label_fpath)
     if len(labels) == 0:
         return img
 
@@ -38,14 +34,17 @@ def draw_bboxes(img, label_fpath, imginfo='', show_conf=False):
         # draw bbox
         try:
             cate_color = cate_colors[int(cate)]
-            cate = cates[int(cate)]    
+            cate = catenms_train[int(cate)]    
         except:
-            cate_color = cate_colors[cates.index(cate)]
+            try:
+                cate_color = cate_colors[catenms_train.index(cate)]
+            except:
+                print('cate: {} is not defined'.format(cate))
         cv2.rectangle(img, (xlt, ylt), (xrb, yrb), cate_color, 1)
         
         # putText
         text = ''
-        cate = cate[0] if cate in ['car', 'truck'] else cate[:3]
+        cate = cate[0] if cate in ['car', 'truck'] else cate
         if label['trackid']:
             text += label['trackid']
         text += cate

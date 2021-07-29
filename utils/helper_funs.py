@@ -4,6 +4,7 @@ import os.path as osp
 
 import cv2
 import numpy as np
+from numpy.lib.arraysetops import isin
 
 def parse_dets(annos):
     labels = []
@@ -56,31 +57,78 @@ def parse_dets(annos):
 
     return labels
 
-def parse_nmjson(anno_fpath):
+def parse_nmjson(anno_fpath, bicycle_merge=False, tlight_merge=True):
     anns_dt = {}
     for anno in json.load(open(anno_fpath, 'r')):
-        objs = [obj['tags'] for obj in anno['task_vehicle']]
-        ''' objs
-            {'class': 'pedestrian',
-            'height': 696.14,
-            'point': [['1308', '403'],
-                        ['1308', '1099'],
-                        ['1674', '1099'],
-                        ['1674', '403']],
-            'type': 'rect',
-            'width': 366.79,
-            'x': 1308.07,
-            'y': 403.28}
-        '''
         anns = []
-        for obj in objs:
-            catenm = obj['class'].strip()
-            xlt, ylt, w, h = obj['x'], obj['y'], obj['width'], obj['height']
-            if catenm in ['rider', 'motocycle']:
-                catenm = 'bicycle'
-            if catenm == 'ignore_area':
-                catenm = 'ignore'
-            anns.append([catenm, xlt + w / 2, ylt + h / 2, w, h])
+        for task in ['task_vehicle', 'task_barrier', 'task_road_traffic_Sign', 'task_TrafficLight', 'task_SpeedLimitSign']:
+            objs = [obj['tags'] for obj in anno.get(task, [])]
+            ''' objs
+                {'class': 'pedestrian',
+                'height': 696.14,
+                'point': [['1308', '403'],
+                            ['1308', '1099'],
+                            ['1674', '1099'],
+                            ['1674', '403']],
+                'type': 'rect',
+                'width': 366.79,
+                'x': 1308.07,
+                'y': 403.28}
+            '''
+            for obj in objs:
+                if 'light_on' in obj['class']:
+                    continue
+                #  or 'inferred-stopline' in obj['class'] or 'left-arrow-red' in obj['class']\
+                    # or 'circle-red' in obj['class']:
+                if task == 'task_TrafficLight':
+                    if 'inferred-stopline' in obj['class']:
+                        continue
+
+                if isinstance(obj['class'], str):
+                    catenm = obj['class'].strip()
+                elif isinstance(obj['class'], list):  # history problem
+                    catenm = '_'.join([cls.strip() for cls in obj['class']])
+                else:  
+                    assert(False)
+
+                if catenm   == 'motocycle':
+                    catenm = 'motorcycle'
+                if bicycle_merge and catenm in ['rider', 'motorcycle']:
+                    catenm = 'bicycle'
+                if catenm == 'ignore_area':
+                    catenm = 'ignore'
+                
+                # tlight
+                if catenm.endswith('traffic-light'):
+                    catenm = 'tlight'
+                if task == 'task_TrafficLight':
+                    if catenm.startswith('back-sign'):
+                        continue
+                    elif catenm.startswith('pedestrian') or catenm.startswith('bike') \
+                        or catenm.startswith('circle') \
+                        or catenm.startswith('off-sign')  \
+                        or catenm.startswith('left') or catenm.startswith('right')\
+                        or catenm.startswith('forward') or catenm.startswith('uturn') \
+                        or catenm.startswith('side-sign') \
+                        or catenm.startswith('green') or catenm.startswith('red') or catenm.startswith('yellow'):
+                        catenm = 'tlight'
+                    else:
+                        # assert(False)
+                        catenm = catenm
+                # tsign
+                if catenm.endswith('traffic-sign'):
+                    catenm = 'tsign'
+                if task == 'task_SpeedLimitSign':
+                    if catenm.startswith('road') or catenm.startswith('ramp') or catenm.startswith('unlimited'):
+                        catenm = 'tsign'
+                    
+                try:
+                    xlt, ylt, w, h = list(map(float, [obj['x'], obj['y'], obj['width'], obj['height']]))
+                except:
+                    print(anno['raw_filename'].split('/')[-1][:-4], task, obj)
+
+                    continue
+                anns.append([catenm, xlt + w / 2, ylt + h / 2, w, h])
             
         key = anno['raw_filename'].split('/')[-1][:-4]
         anns_dt[key] = anns
@@ -122,51 +170,54 @@ def yuv2img(yuv_fpath, img_fpath, platform='tda4', img_format='png'):
 
     return error_code
 
-def o2s_transform(oimg, oanns=None, norm=False):
-    def ann_transform(bbox, crop, scale):
-        xc, yc, w, h = bbox
-        tpcrop, btcrop = crop
-        ylt = max(0, yc - h/2 - tpcrop)
-        yrb = min(1280-1-btcrop, ylt + h)
-        h = round(yrb - ylt, 3)
-        yc = round((ylt + yrb) / 2, 3)
-        if yc - bbox[1] >= 0.0000001 or h - bbox[3] >= 0.0000001:
-            print('yc', bbox[1], yc)
-            print('h', bbox[-1], h)
-        return list(map(lambda x:x/scale, [xc, yc, w, h]))
+def o2s_transform(oimg, oanns=None, norm=False, dst_shape=(640, 384)):
+    def ann_transform(oanns, crop, src_shape, dst_shape):
+        xscale, yscale = src_shape[1] / dst_shape[0], src_shape[0] / dst_shape[1]
+        oanns_transform, sanns = [], []
+        for oann in oanns:
+            cate, xc, yc, w, h = oann
+            tpcrop, btcrop = crop
+            if tpcrop > 0:
+                ylt = max(0, yc - h/2 - tpcrop)
+                yrb = min(1280-1-btcrop, ylt + h)
+                h = round(yrb - ylt, 3)
+                yc = round((ylt + yrb) / 2, 3)
+            else:
+                yc += abs(tpcrop)
+            oanns_transform.append([cate, xc, yc, w, h])
+            sanns.append([cate, xc / xscale, yc / yscale, w / xscale, h / yscale])
+        return oanns_transform, sanns
 
-    oimgh, oimgw = oimg.shape[:2]
-    dstw, dsth = 640, 384
     
-    if oimg.shape == (1280, 1920, 3):
+    if oimg.shape == (1280, 1920, 3):  # Big TDA4
         tpcrop, btcrop = 90, 38
-        scale = 3
-    elif oimg.shape == (1208, 1920, 3):
+    elif oimg.shape == (1208, 1920, 3):  # Big PX2
         tpcrop, btcrop = 56, 0
-        scale = 3
-    elif oimg.shape == (1152, 1920, 3):
+    elif oimg.shape == (1152, 1920, 3):  # Big Crop Image
         tpcrop, btcrop = 0, 0
-        scale = 3
-    elif oimg.shape == (384, 640, 3):
+    elif oimg.shape == (384, 640, 3):  # Small Image
         tpcrop, btcrop = 0, 0
-        scale = 1
-    else:
-        assert(False), 'oimg.shape: {} is not right.'.format(oimg.shape)
+    else:  # HuaWei(1080, 1920)
+        tpcrop, btcrop = 0, 0
+        print('  oimg.shape: {} is not right.'.format(oimg.shape))
 
-    # simg
-    assert(((oimgh - tpcrop - btcrop) == scale * dsth) & 
-            (oimgw == scale * dstw))
-    oimg = oimg[tpcrop:oimgh-btcrop, :, :]
-    simg = cv2.resize(oimg, (dstw, dsth))
-    
-    # sanns
+    # sanns, simgs
     sanns = []
-    if oanns is not None:
-        sanns = [[oann[0]] + ann_transform(oann[1:], (tpcrop, btcrop), scale) for oann in oanns]
-    
+    oimg = oimg[tpcrop:oimg.shape[0]-btcrop, :, :]
+    oimgh, oimgw = oimg.shape[:2]
+    if oimgh == 1152 and oimgw == 1920:
+        simg = cv2.resize(oimg, dst_shape)
+        if oanns is not None:
+            oanns, sanns = ann_transform(oanns, (tpcrop, btcrop), oimg.shape, dst_shape)
+    else:
+        simg = oimg.copy()
+        dst_shape = (oimg.shape[1], oimg.shape[0])
+        oanns, sanns = ann_transform(oanns, (tpcrop, btcrop), oimg.shape, dst_shape)
+
     # snnas_norm
     sanns_norm = []
     if norm:
+        dstw, dsth = dst_shape
         sanns_norm = [[sann[0], sann[1]/dstw, sann[2]/dsth, sann[3]/dstw, sann[4]/dsth] for sann in sanns]
     
-    return simg, sanns, sanns_norm
+    return oimg, oanns, simg, sanns, sanns_norm

@@ -6,6 +6,7 @@ import shutil
 
 from .utils import usort
 
+imgtypes = ['jpg', 'bmp', 'png']
 
 def checkpath(p, ok=None):
     p = Path(p)
@@ -25,12 +26,18 @@ def checkpath(p, ok=None):
 
 
 def walk(p, regex='*'):
+    if regex is None:
+        regex = '*'
     walks = []
     imgnum = 0
     for dirpath, dirs, fnames in os.walk(p):
         fpaths = glob.glob('{}/{}'.format(dirpath, regex))
+        if regex == '*':
+            fpaths = [fpath for fpath in fpaths if fpath[-3:] in imgtypes]
+            
         if fpaths:
             fpaths = usort(fpaths)
+            fpaths = [osp.abspath(fpath) for fpath in fpaths]
             walks.append([osp.dirname(fpaths[0]), fpaths])
             imgnum += len(fpaths)
 
