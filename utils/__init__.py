@@ -1,4 +1,4 @@
-from .utils import usort
+from .utils import usort, clip
 from .io import checkpath, walk
 from .helper_funs import parse_dets, parse_nmjson, o2s_transform
 from .plot import draw_bboxes
@@ -7,7 +7,7 @@ from .cfgs import roaduser_5cls, catenms_train, catenms_test, cate_colors
 
 
 __all__ = [
-    'usort', 
+    'usort', 'clip',
     'checkpath', 'walk',
     'parse_dets', 'parse_nmjson', 'o2s_transform',
     'draw_bboxes',

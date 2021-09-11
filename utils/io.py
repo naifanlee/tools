@@ -6,7 +6,7 @@ import shutil
 
 from .utils import usort
 
-imgtypes = ['jpg', 'bmp', 'png']
+imgtypes = ['.jpg', '.bmp', '.png']
 
 def checkpath(p, ok=None):
     p = Path(p)
@@ -25,24 +25,39 @@ def checkpath(p, ok=None):
         p.mkdir(parents=True)
 
 
-def walk(p, regex='*'):
-    if regex is None:
-        regex = '*'
-    walks = []
-    imgnum = 0
-    for dirpath, dirs, fnames in os.walk(p):
-        fpaths = glob.glob('{}/{}'.format(dirpath, regex))
-        if regex == '*':
-            fpaths = [fpath for fpath in fpaths if fpath[-3:] in imgtypes]
-            
-        if fpaths:
-            fpaths = usort(fpaths)
-            fpaths = [osp.abspath(fpath) for fpath in fpaths]
-            walks.append([osp.dirname(fpaths[0]), fpaths])
-            imgnum += len(fpaths)
+def walk(p, regex='**/*'):
+    regex = '**/*' if regex == '*' else regex
+    fpaths = glob.glob('{}/{}'.format(p, regex), recursive=True)
+    fpaths = [fpath for fpath in fpaths if fpath[-4:] in imgtypes]
+    print('==> Number: {:<6d}, Path: {}'.format(len(fpaths), '{}/{}'.format(osp.abspath(p), regex)))
+    assert(len(fpaths)), 'No images in p: {}'.format(p)
+    if fpaths:
+        walks = {}
+        for fpath in fpaths:
+            dirpath = Path(fpath).parent.as_posix()
+            if dirpath not in walks:
+                walks[dirpath] = [fpath]
+            else:
+                walks[dirpath].append(fpath)
 
-    print('==> Number: {:<6d}, Path: {}'.format(imgnum, p))
+        for dirpath, fpaths in walks.items():
+            try:
+                walks[dirpath] = usort(fpaths)
+            except:
+                walks[dirpath] = fpaths
+        try:
+            walks = usort(walks).items()
+        except:
+            walks = walks.items()
+
     for dirpath, fpaths in walks:
         print('    Number: {:<6d}, dirpath: {}'.format(len(fpaths), dirpath))
 
     return walks
+
+def annwrite(annfpath, anns):
+    if osp.exists(annfpath):
+        os.system('rm -rf {}'.format(annfpath))
+    with open(annfpath, 'a') as fa:
+        for ann in anns:
+            fa.write(' '.join(list(map(lambda x: str(x), ann))) + '\n')

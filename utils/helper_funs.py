@@ -6,7 +6,9 @@ import cv2
 import numpy as np
 from numpy.lib.arraysetops import isin
 
-def parse_dets(annos):
+from .cfgs import catenms_train
+
+def parse_dets(annos, annotype=''):
     labels = []
     if isinstance(annos, str):
         if not osp.exists(annos):
@@ -15,7 +17,7 @@ def parse_dets(annos):
 
         with open(annos, 'r') as fr:
             bboxes = [bbox.strip().split() for bbox in fr.readlines()]
-    elif isinstance(annos, list) or isinstance(annos, np.ndarray):
+    elif isinstance(annos, list):
         bboxes = annos
     elif isinstance(annos, dict):
         bboxes = [bbox for _, bbox in annos.items()]
@@ -23,26 +25,31 @@ def parse_dets(annos):
         assert(False), 'annos.type: {}'.format(type(annos))
 
     for bbox in bboxes:
-        if len(bbox) == 5:
-            cate = bbox[0]
-            xc, yc, w, h = map(float, bbox[1:])
-            trackid, conf = '', 0            
-        elif len(bbox) == 6:
-            trackid = ''
-            cate = bbox[0]
-            xc, yc, w, h = map(lambda x: float(x), bbox[1:-1])
-            conf = round(float(bbox[-1]), 2)           
-        elif len(bbox) == 7:
-            trackid, cate = bbox[:2]
-            xc, yc, w, h = map(lambda x: float(x), bbox[2:-1])
-            conf = round(float(bbox[-1]), 2)
+        if bbox[0] == 'cate_x1y1_x2y2':
+            cate = bbox[1]
+            xlt, ylt, xrb, yrb = map(float, bbox[2:])
+            trackid, conf = '', 0
         else:
-            assert(False), 'len(bbox) must = 5/6/7: {}'.format(bbox)
+            if len(bbox) == 5:
+                cate = bbox[0]
+                xc, yc, w, h = map(float, bbox[1:])
+                trackid, conf = '', 0            
+            elif len(bbox) == 6:
+                trackid = ''
+                cate = bbox[0]
+                xc, yc, w, h = map(lambda x: float(x), bbox[1:-1])
+                conf = round(float(bbox[-1]), 2)           
+            elif len(bbox) == 7:
+                trackid, cate = bbox[:2]
+                xc, yc, w, h = map(lambda x: float(x), bbox[2:-1])
+                conf = round(float(bbox[-1]), 2)
+            else:
+                assert(False), 'len(bbox) must = 5/6/7: {}'.format(bbox)
 
-        xlt = xc - w / 2
-        ylt = yc - h / 2
-        xrb = xc + w / 2
-        yrb = yc + h / 2
+            xlt = xc - w / 2
+            ylt = yc - h / 2
+            xrb = xc + w / 2
+            yrb = yc + h / 2
         cate = 'bicycle' if cate == 'bike' else cate
 
         labels.append({
@@ -76,33 +83,41 @@ def parse_nmjson(anno_fpath, bicycle_merge=False, tlight_merge=True):
                 'y': 403.28}
             '''
             for obj in objs:
-                if 'light_on' in obj['class']:
-                    continue
-                #  or 'inferred-stopline' in obj['class'] or 'left-arrow-red' in obj['class']\
-                    # or 'circle-red' in obj['class']:
-                if task == 'task_TrafficLight':
-                    if 'inferred-stopline' in obj['class']:
-                        continue
-
                 if isinstance(obj['class'], str):
                     catenm = obj['class'].strip()
                 elif isinstance(obj['class'], list):  # history problem
-                    catenm = '_'.join([cls.strip() for cls in obj['class']])
+                    if isinstance(obj['class'][0], list):
+                        catenm = obj['class'][0][0].strip()
+                        # print('[[]], not str', anno['raw_filename'].split('/')[-1][:-4], task, obj)
+                    else:
+                        catenm = '_'.join([cls.strip() for cls in obj['class']])
+                        # print('[], not str', anno['raw_filename'].split('/')[-1][:-4], task, obj)
                 else:  
                     assert(False)
 
                 if catenm   == 'motocycle':
                     catenm = 'motorcycle'
-                if bicycle_merge and catenm in ['rider', 'motorcycle']:
-                    catenm = 'bicycle'
-                if catenm == 'ignore_area':
-                    catenm = 'ignore'
-                
+                    if bicycle_merge:
+                        catenm = 'bicycle'
+                elif catenm in ['rider']:
+                    if bicycle_merge:
+                        catenm = 'bicycle'
                 # tlight
-                if catenm.endswith('traffic-light'):
+                elif catenm.endswith('traffic-light'):
                     catenm = 'tlight'
-                if task == 'task_TrafficLight':
-                    if catenm.startswith('back-sign'):
+                elif catenm.endswith('traffic-sign'):
+                    catenm = 'tsign'
+                elif catenm in ['plastic-traffic-barrier', 'Safety-Crash-Barrels', 'cement-traffic-barrier', 'safety-crash-barrels']:
+                    catenm = 'barrier'
+                elif catenm == 'ignore_area':
+                    catenm = 'ignore'
+                else:
+                    if catenm in catenms_train:
+                        pass
+                    elif task == 'task_SpeedLimitSign':
+                        if catenm.startswith('road') or catenm.startswith('ramp') or catenm.startswith('unlimited'):
+                            catenm = 'tsign'
+                    elif catenm.startswith('back-sign') or catenm.startswith('light_on') or catenm.startswith('inferred-stopline'):
                         continue
                     elif catenm.startswith('pedestrian') or catenm.startswith('bike') \
                         or catenm.startswith('circle') \
@@ -113,21 +128,17 @@ def parse_nmjson(anno_fpath, bicycle_merge=False, tlight_merge=True):
                         or catenm.startswith('green') or catenm.startswith('red') or catenm.startswith('yellow'):
                         catenm = 'tlight'
                     else:
-                        # assert(False)
-                        catenm = catenm
-                # tsign
-                if catenm.endswith('traffic-sign'):
-                    catenm = 'tsign'
-                if task == 'task_SpeedLimitSign':
-                    if catenm.startswith('road') or catenm.startswith('ramp') or catenm.startswith('unlimited'):
-                        catenm = 'tsign'
-                    
+                        if not catenm.startswith('vehicle'):
+                            print('catenm, not defined about traffic light', anno['raw_filename'].split('/')[-1][:-4], task, obj)
+                        else:
+                            print('catenm, not defined about traffic light', anno['raw_filename'].split('/')[-1][:-4], task, obj)
+                            catenm = 'car'
                 try:
                     xlt, ylt, w, h = list(map(float, [obj['x'], obj['y'], obj['width'], obj['height']]))
                 except:
-                    print(anno['raw_filename'].split('/')[-1][:-4], task, obj)
-
+                    # print('point, not rect', anno['raw_filename'].split('/')[-1][:-4], task, obj)
                     continue
+            
                 anns.append([catenm, xlt + w / 2, ylt + h / 2, w, h])
             
         key = anno['raw_filename'].split('/')[-1][:-4]
@@ -170,7 +181,7 @@ def yuv2img(yuv_fpath, img_fpath, platform='tda4', img_format='png'):
 
     return error_code
 
-def o2s_transform(oimg, oanns=None, norm=False, dst_shape=(640, 384)):
+def o2s_transform(oimg, oanns=None, norm=False, dst_shape=(640, 384), crop=None):
     def ann_transform(oanns, crop, src_shape, dst_shape):
         xscale, yscale = src_shape[1] / dst_shape[0], src_shape[0] / dst_shape[1]
         oanns_transform, sanns = [], []
@@ -178,28 +189,37 @@ def o2s_transform(oimg, oanns=None, norm=False, dst_shape=(640, 384)):
             cate, xc, yc, w, h = oann
             tpcrop, btcrop = crop
             if tpcrop > 0:
-                ylt = max(0, yc - h/2 - tpcrop)
+                ylt = max(0, yc - h/2 - (tpcrop-1))
+                if yc - h/2 >= tpcrop-1:
+                    h = h
+                else:
+                    if yc + h/2 <= tpcrop-1:
+                        continue
+                    else:
+                        h = h - (tpcrop-1 - (yc - h/2))
                 yrb = min(1280-1-btcrop, ylt + h)
-                h = round(yrb - ylt, 3)
-                yc = round((ylt + yrb) / 2, 3)
+                h = yrb - ylt
+                yc = (ylt + yrb) / 2
             else:
                 yc += abs(tpcrop)
             oanns_transform.append([cate, xc, yc, w, h])
             sanns.append([cate, xc / xscale, yc / yscale, w / xscale, h / yscale])
         return oanns_transform, sanns
 
-    
-    if oimg.shape == (1280, 1920, 3):  # Big TDA4
-        tpcrop, btcrop = 90, 38
-    elif oimg.shape == (1208, 1920, 3):  # Big PX2
-        tpcrop, btcrop = 56, 0
-    elif oimg.shape == (1152, 1920, 3):  # Big Crop Image
-        tpcrop, btcrop = 0, 0
-    elif oimg.shape == (384, 640, 3):  # Small Image
-        tpcrop, btcrop = 0, 0
-    else:  # HuaWei(1080, 1920)
-        tpcrop, btcrop = 0, 0
-        print('  oimg.shape: {} is not right.'.format(oimg.shape))
+    if crop is None:  # default
+        if oimg.shape == (1280, 1920, 3):  # Big TDA4
+            tpcrop, btcrop = 90, 38
+        elif oimg.shape == (1208, 1920, 3):  # Big PX2
+            tpcrop, btcrop = 56, 0
+        elif oimg.shape == (1152, 1920, 3):  # Big Crop Image
+            tpcrop, btcrop = 0, 0
+        elif oimg.shape == (384, 640, 3):  # Small Image
+            tpcrop, btcrop = 0, 0
+        else:  # HuaWei(1080, 1920)
+            tpcrop, btcrop = 0, 0
+            print('  oimg.shape: {} is not right.'.format(oimg.shape))
+    else:
+        tpcrop, btcrop = crop
 
     # sanns, simgs
     sanns = []

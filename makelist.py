@@ -12,7 +12,7 @@ from utils import *
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--imgpath', type=str, required=True)
-    parser.add_argument('--name', type=str, required=True)
+    parser.add_argument('--name', type=str, default='a')
     parser.add_argument('--regex', type=str, default='*')
     args = parser.parse_args()
 
@@ -24,4 +24,4 @@ if __name__ == '__main__':
     for dirpath, fpaths in walk(args.imgpath, regex=args.regex):
         for fpath in fpaths:
             with open(args.name + '.txt', 'a') as fa:
-                fa.write(fpath + '\n')
+                fa.write(osp.abspath(fpath) + '\n')
